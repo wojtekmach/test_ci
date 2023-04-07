@@ -1,0 +1,78 @@
+name: Setup BEAM
+
+inputs:
+  otp-version:
+    description: "The OTP version"
+    required: true
+  elixir-version:
+    description: "The Elixir version (optional)"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        if [[ -z "${ARCH}" ]]; then
+          [[ `uname -m` = "arm64" ]]   && echo "ARCH=aarch64" >> $GITHUB_ENV
+          [[ `uname -m` = "aarch64" ]] && echo "ARCH=aarch64" >> $GITHUB_ENV
+          [[ `uname -m` = "x86_64" ]]  && echo "ARCH=x86_64" >> $GITHUB_ENV
+        fi
+
+        [[ -n "${OTP_VERSION}" ]] || OTP_VERSION=25.2.3 && echo "OTP_VERSION=$OTP_VERSION" >> $GITHUB_ENV
+        [[ -n "${ELIXIR_VERSION}" ]] || echo "ELIXIR_VERSION=1.14.4" >> $GITHUB_ENV
+
+        otp_release=`echo $OTP_VERSION | cut -d. -f1`
+        echo "OTP_RELEASE=${otp_release}" >> $GITHUB_ENV
+
+    - uses: actions/cache@v3
+      id: cache-otp
+      with:
+        path: .cache/otp
+        key: otp-${{ env.OTP_VERSION }}-${{ runner.os }}-${{ env.ARCH }}
+
+    # Please don't run this on CI or at least cache like here. Also, do sponsor Burrito! https://github.com/sponsors/doawoo
+    - name: Download OTP
+      if: steps.cache-otp.outputs.cache-hit != 'true'
+      run: |
+        [[ "${{ runner.os }}" = "macOS" ]] && os=darwin
+        [[ "${{ runner.os }}" = "Linux" ]] && os=linux underscore_libc=_gnu slash_libc=/gnu
+
+        name=otp_${{ env.OTP_VERSION }}_${os}${underscore_libc}_${{ env.ARCH }}_ssl_1.1.1s
+        url="https://burrito-otp.b-cdn.net/OTP-${{ env.OTP_VERSION }}/$os/${{ env.arch }}${slash_libc}/$name.tar.gz?please-respect-my-bandwidth-costs=thank-you"
+        echo downloading $url
+        curl --fail -o otp.tar.gz $url
+        tar xzf otp.tar.gz
+        mkdir -p .cache
+        mv $name .cache/otp
+
+    - name: Install OTP
+      run: |
+        cd .cache/otp
+        ./Install -sasl $PWD
+        echo "$PWD/bin" >> "${GITHUB_PATH}"
+
+    - uses: actions/cache@v3
+      id: cache-elixir
+      with:
+        path: .cache/elixir
+        key: elixir-${{ env.ELIXIR_VERSION }}-otp-${{ env.OTP_RELEASE }}
+
+    - name: Download Elixir
+      if: steps.cache-elixir.outputs.cache-hit != 'true'
+      run: |
+        [ "${{ env.ELIXIR_VERSION }}" != "main" ] && v="v"
+        url="https://repo.hex.pm/builds/elixir/${v}${{ env.ELIXIR_VERSION }}-otp-${{ env.OTP_RELEASE }}.zip"
+        echo downloading $url
+        curl --fail -L -o elixir.zip $url
+        mkdir -p .cache/elixir
+        cd .cache/elixir
+        unzip ../../elixir.zip
+
+    - name: Install Elixir
+      run: |
+        echo "$PWD/.cache/elixir/bin" >> "${GITHUB_PATH}"
+
+    - name: Install Hex & Rebar
+      run: |
+        mix local.hex --force
+        mix local.rebar --force

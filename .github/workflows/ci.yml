@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./setup-beam
+        with:
+          otp-version: 25.2.3
+          elixir-version: 1.14.4
+
+      - name: Test Elixir
+        run: |
+          elixir -e "import IEx.Helpers; runtime_info([:system])"
